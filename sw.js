@@ -1,5 +1,5 @@
 // Service worker : fonctionne hors ligne. Réseau d'abord (pour recevoir les mises à jour), cache en secours.
-const CACHE = 'gourdes-v6';
+const CACHE = 'gourdes-v13';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',

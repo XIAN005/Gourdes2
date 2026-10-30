@@ -143,3 +143,20 @@ nav .brand{display:none}
   .toast{bottom:28px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+#lock{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+.lock-box{width:min(320px,100%)}
+.lock-box .brand{font-size:20px;margin-bottom:12px}
+#lockPin{text-align:center;letter-spacing:.3em;font-size:22px}
+#freq:empty{display:none}
+#freq .muted{align-self:center;margin-right:2px}
+.week{margin:16px 0 0;font-size:14px;color:var(--ink-2)}
+.seg.four{grid-template-columns:repeat(4,1fr);margin:6px 0 4px}
+.proj{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+.proj th{font-weight:500;color:var(--ink-3);font-size:12px;text-align:right;padding:0 0 8px;vertical-align:bottom}
+.proj td{padding:10px 0;border-top:1px solid var(--line);text-align:right}
+.proj th:first-child,.proj td:first-child{text-align:left}
+#projChart{margin-top:20px}
+#welcome{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
+#welcome h2{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:6px 0 8px}
+.toast.act{pointer-events:auto}
+.toast button{background:none;border:0;color:inherit;text-decoration:underline;margin-left:10px;padding:0;font-size:14px}

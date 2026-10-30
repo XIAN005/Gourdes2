@@ -2,6 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://generativelanguage.googleapis.com https://api.github.com https://gist.githubusercontent.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141517" media="(prefers-color-scheme: dark)">
@@ -30,7 +32,7 @@
     </div>
 
     <div class="sec">
-      <p class="label">Solde (économies moins dépenses)</p>
+      <div class="head"><p class="label">Solde (économies moins dépenses)</p><button class="link" id="hideBtn" type="button">Masquer</button></div>
       <p class="figure" id="sBal">0 G</p>
       <div class="grid">
         <div class="stat"><small>Total économisé</small><b id="sTotSav">0 G</b></div>
@@ -44,9 +46,11 @@
         <div class="stat"><small>Économies</small><b id="sMonthSav">0 G</b></div>
         <div class="stat"><small>Dépenses</small><b id="sMonthExp">0 G</b></div>
       </div>
+      <p class="week" id="weekLine"></p>
       <div id="goalBox" class="meter" hidden>
         <div class="row"><span>Objectif d'économie</span><span id="goalTxt"></span></div>
         <div class="bar"><i id="goalBar" style="width:0"></i></div>
+        <p class="hint" id="goalPace"></p>
       </div>
       <div id="capBox" class="meter" hidden>
         <div class="row"><span>Plafond de dépenses du mois</span><span id="capTxt"></span></div>
@@ -63,7 +67,8 @@
     </figure>
 
     <div class="sec">
-      <h2>Nouvelle opération</h2>
+      <h2 id="formTitle">Nouvelle opération</h2>
+      <div class="hint" id="editBar" hidden>Modification en cours. <button class="link" id="editCancel" type="button">Annuler</button></div>
       <div class="seg" id="seg">
         <button class="on expense" data-t="expense" type="button">Dépense</button>
         <button data-t="saving" type="button">Économie</button>
@@ -71,13 +76,15 @@
       <label for="amount">Montant</label>
       <div class="money"><input type="number" id="amount" inputmode="numeric" min="1" step="1" placeholder="0"><span>G</span></div>
       <div class="chips" id="chips"></div>
+      <div class="chips" id="freq" aria-label="Montants fréquents"></div>
       <div class="hint" id="breakdown"></div>
       <div class="two">
         <div><label for="cat">Catégorie</label><select id="cat"></select></div>
         <div><label for="date">Date</label><input type="date" id="date"></div>
       </div>
       <label for="note">Note (facultatif)</label>
-      <input type="text" id="note" placeholder="Ex : marché, transport" maxlength="80">
+      <input type="text" id="note" placeholder="Ex : marché, transport" maxlength="80" list="noteList" autocomplete="off">
+      <datalist id="noteList"></datalist>
       <button class="btn" id="addBtn" type="button">Ajouter la dépense</button>
       <button class="link block" id="goAiAdd" type="button">Saisir par une phrase avec l'assistant</button>
     </div>
@@ -131,10 +138,11 @@
   </section>
 
   <section id="tab-ana">
-    <div class="seg three" id="anaNav">
+    <div class="seg four" id="anaNav">
       <button class="on" data-ana="month" type="button">Mois</button>
       <button data-ana="quarter" type="button">Trimestre</button>
       <button data-ana="year" type="button">Année</button>
+      <button data-ana="proj" type="button">Projection</button>
     </div>
 
     <div class="pane active" id="ana-month">
@@ -174,6 +182,25 @@
         <button class="btn" id="bilanAnAi" type="button">Demander une analyse à l'assistant</button>
       </div>
     </div>
+
+    <div class="pane" id="ana-proj">
+      <div class="sec">
+        <h2>Effet cumulé</h2>
+        <p class="hint">Ce que devient votre épargne si vous gardez le même rythme, avec ou sans intérêt.</p>
+        <label for="pMonthly">Montant mis de côté par mois (G)</label>
+        <input type="number" id="pMonthly" inputmode="numeric" min="0" placeholder="Votre moyenne récente">
+        <p class="hint" id="pMonthlyHint"></p>
+        <div class="two">
+          <div><label for="pRate">Taux annuel (%)</label><input type="number" id="pRate" inputmode="decimal" min="0" max="50" step="0.5" placeholder="0"></div>
+          <div><label for="pStart">Capital de départ (G)</label><input type="number" id="pStart" inputmode="numeric" min="0" placeholder="Votre solde"></div>
+        </div>
+      </div>
+      <div class="sec">
+        <div id="projOut"></div>
+        <div id="projChart"></div>
+        <p class="hint">Projection indicative en gourdes courantes. L'inflation et les variations de change ne sont pas prises en compte, et un taux d'intérêt n'est jamais garanti.</p>
+      </div>
+    </div>
   </section>
 
   <section id="tab-ai">
@@ -209,6 +236,8 @@
       <h2>Objectif et budgets</h2>
       <label for="goal">Objectif d'économie total (G)</label>
       <input type="number" id="goal" inputmode="numeric" min="0" placeholder="Ex : 50000">
+      <label for="goalDate">Date visée pour l'objectif (facultatif)</label>
+      <input type="date" id="goalDate">
       <label for="cap">Plafond de dépenses par mois (G)</label>
       <input type="number" id="cap" inputmode="numeric" min="0" placeholder="Ex : 20000">
       <label>Budget mensuel par catégorie (G), vide si aucun</label>
@@ -232,9 +261,9 @@
       <label for="aiModel">Modèle</label>
       <input type="text" id="aiModel" list="models" autocomplete="off" autocapitalize="off" spellcheck="false">
       <datalist id="models">
-        <option value="gemini-2.0-flash">
+        <option value="gemini-3.8-flash">
+        <option value="gemini-3.6-flash">
         <option value="gemini-2.5-flash">
-        <option value="gemini-2.5-pro">
       </datalist>
       <button class="btn" id="aiSave" type="button">Enregistrer et tester</button>
       <button class="btn ghost" id="aiForget" type="button">Retirer la clé</button>
@@ -258,9 +287,13 @@
     <div class="sec">
       <h2>Synchronisation entre appareils</h2>
       <div id="syncOffBox">
-        <p class="hint">Retrouvez les mêmes données sur votre téléphone et votre ordinateur. Elles sont enregistrées dans un gist secret de votre compte GitHub.</p>
+        <p class="hint">Retrouvez les mêmes données sur votre téléphone et votre ordinateur. Elles sont chiffrées puis enregistrées dans un gist de votre compte GitHub.</p>
         <label for="syncToken">Jeton GitHub (droit « gist »)</label>
         <input type="password" id="syncToken" placeholder="ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <p class="hint" id="syncMigrate" hidden>La synchronisation est désormais chiffrée. Choisissez une phrase secrète pour la réactiver.</p>
+        <label for="syncPass">Phrase secrète de chiffrement (8 caractères minimum)</label>
+        <input type="password" id="syncPass" placeholder="Phrase secrète" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+        <p class="hint">Vos données sont chiffrées avant l'envoi : sans cette phrase, personne ne peut les lire, pas même GitHub. Elle ne peut pas être récupérée si vous l'oubliez. Utilisez la même sur chaque appareil.</p>
         <button class="btn" id="syncEnable" type="button">Activer la synchronisation</button>
         <details class="more">
           <summary>Comment obtenir le jeton</summary>
@@ -269,7 +302,7 @@
             <li>Laissez uniquement la case « gist » cochée, choisissez une expiration, puis générez le jeton.</li>
             <li>Collez-le ici. Sur l'autre appareil, collez le même jeton.</li>
           </ol>
-          <p class="hint">Le jeton ne donne accès qu'à vos gists, pas à vos dépôts. Un gist secret n'est pas listé mais reste lisible par quiconque en connaît l'adresse : évitez les notes sensibles.</p>
+          <p class="hint">Le jeton ne donne accès qu'à vos gists, pas à vos dépôts. Le contenu du gist est chiffré (AES-256) : sans votre phrase secrète, il est illisible.</p>
         </details>
       </div>
       <div id="syncOnBox" hidden>
@@ -278,6 +311,26 @@
         <button class="btn ghost" id="syncDisable" type="button">Désactiver sur cet appareil</button>
         <p class="hint">La synchronisation se fait à chaque changement et à l'ouverture de l'application.</p>
       </div>
+    </div>
+
+    <div class="sec">
+      <h2>Confidentialité</h2>
+      <div id="pinOff">
+        <label for="pinNew">Nouveau code PIN (4 à 8 chiffres)</label>
+        <input type="password" id="pinNew" inputmode="numeric" maxlength="8" autocomplete="off">
+        <label for="pinNew2">Confirmer le code</label>
+        <input type="password" id="pinNew2" inputmode="numeric" maxlength="8" autocomplete="off">
+        <button class="btn" id="pinEnable" type="button">Activer le code PIN</button>
+      </div>
+      <div id="pinOn" hidden>
+        <p class="hint">Le code PIN est actif. L'application se verrouille après une minute passée en arrière-plan.</p>
+        <button class="btn ghost" id="lockNow" type="button">Verrouiller maintenant</button>
+        <label for="pinCur">Code actuel (pour le retirer)</label>
+        <input type="password" id="pinCur" inputmode="numeric" maxlength="8" autocomplete="off">
+        <button class="btn danger" id="pinRemove" type="button">Retirer le code PIN</button>
+      </div>
+      <button class="btn ghost" id="hideSet" type="button">Masquer les montants</button>
+      <p class="hint">Le code PIN verrouille l'écran de l'application. Les données restent enregistrées sur l'appareil : il ne remplace pas le verrouillage de votre téléphone.</p>
     </div>
 
     <div class="sec">
@@ -301,6 +354,27 @@
     <button data-tab="more" type="button">Réglages</button>
   </div>
 </nav>
+<div id="welcome" hidden role="dialog" aria-modal="true" aria-labelledby="wTitle">
+  <div class="lock-box">
+    <p class="muted" id="wStep"></p>
+    <h2 id="wTitle"></h2>
+    <p class="hint" id="wHelp"></p>
+    <label for="wInput" id="wLabel"></label>
+    <input type="number" id="wInput" inputmode="numeric" min="0" placeholder="0">
+    <div id="wDateBox" hidden><label for="wDate">Date visée (facultatif)</label><input type="date" id="wDate"></div>
+    <button class="btn" id="wNext" type="button">Continuer</button>
+    <button class="link block" id="wSkip" type="button">Passer cette question</button>
+  </div>
+</div>
+<div id="lock" hidden role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+  <div class="lock-box">
+    <p class="brand" id="lockTitle">Gourdes²</p>
+    <label for="lockPin">Code PIN</label>
+    <input type="password" id="lockPin" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="Code PIN">
+    <p class="hint" id="lockMsg" role="alert"></p>
+    <button class="btn" id="lockBtn" type="button">Déverrouiller</button>
+  </div>
+</div>
 <div class="toast" id="toast" role="status"></div>
 
 <script src="app.js"></script>
