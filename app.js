@@ -1,13 +1,13 @@
 'use strict';
 /* =========================================================
    Gourdes² — application 100 % côté navigateur
-   Données : localStorage. IA : API Anthropic appelée depuis
+   Données : localStorage. IA : API Google Gemini appelée depuis
    le navigateur avec la clé de l'utilisateur.
    ========================================================= */
 const DENOMS = [1000, 500, 250, 100, 50, 25, 10, 5];
 const CATS = {
   expense: ['Nourriture', 'Transport', 'Logement', 'Santé', 'Éducation', 'Loisirs', 'Communication', 'Autre'],
-  saving: ['Épargne', 'Sòl / Tontine', 'Cadeau reçu', 'Salaire / Revenu', 'Autre']
+  saving: ['Épargne', 'Cadeau reçu', 'Salaire / Revenu', 'Autre']
 };
 const KEY = 'mes-gourdes-v2', OLD_KEY = 'mes-gourdes-v1', AI_KEY = 'mes-gourdes-ai';
 const DEFAULT_MODEL = 'gemini-2.0-flash';
@@ -65,7 +65,9 @@ function addTx(type, amount, category, note, date) {
 }
 
 /* ---------------- Navigation ---------------- */
+const TITLES = { home: 'Accueil', hist: 'Historique', ana: 'Analyse', ai: 'Assistant', more: 'Réglages' };
 function go(tab) {
+  $('pageTitle').textContent = TITLES[tab] || '';
   if (tab === 'ana') { markBilanSeen(); markBilanAnSeen(); }
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
   document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
@@ -91,7 +93,7 @@ function setType(t) {
 document.querySelectorAll('#seg button').forEach(b => b.onclick = () => setType(b.dataset.t));
 
 $('chips').innerHTML = DENOMS.slice().reverse().map(d => `<button type="button" class="chip" data-v="${d}">+${d}</button>`).join('') +
-  '<button type="button" class="chip" data-v="0">✕</button>';
+  '<button type="button" class="chip" data-v="0">Effacer</button>';
 $('chips').onclick = e => {
   const v = e.target.dataset && e.target.dataset.v; if (v === undefined) return;
   $('amount').value = v === '0' ? '' : (Number($('amount').value || 0) + Number(v));
@@ -128,19 +130,19 @@ function computeAlerts() {
   for (const [c, lim] of Object.entries(S.budgets || {})) {
     if (!(lim > 0)) continue;
     const s = by[c] || 0, p = s / lim;
-    if (p >= 1) out.push({ id: `b100-${c}-${m}`, level: 'danger', icon: '🚨', text: `Budget « ${c} » dépassé : ${fmt(s)} sur ${fmt(lim)}.` });
-    else if (p >= 0.8) out.push({ id: `b80-${c}-${m}`, level: 'warn', icon: '⚠️', text: `Budget « ${c} » à ${Math.round(p * 100)} % : ${fmt(s)} sur ${fmt(lim)}.` });
+    if (p >= 1) out.push({ id: `b100-${c}-${m}`, level: 'danger', text: `Budget « ${c} » dépassé : ${fmt(s)} sur ${fmt(lim)}.` });
+    else if (p >= 0.8) out.push({ id: `b80-${c}-${m}`, level: 'warn', text: `Budget « ${c} » à ${Math.round(p * 100)} % : ${fmt(s)} sur ${fmt(lim)}.` });
   }
   if (S.cap > 0) {
-    if (total >= S.cap) out.push({ id: `cap100-${m}`, level: 'danger', icon: '🚨', text: `Plafond du mois atteint : ${fmt(total)} dépensés sur ${fmt(S.cap)}.` });
-    else if (total >= S.cap * 0.8) out.push({ id: `cap80-${m}`, level: 'warn', icon: '⚠️', text: `Vous avez utilisé ${Math.round(total / S.cap * 100)} % de votre plafond mensuel.` });
+    if (total >= S.cap) out.push({ id: `cap100-${m}`, level: 'danger', text: `Plafond du mois atteint : ${fmt(total)} dépensés sur ${fmt(S.cap)}.` });
+    else if (total >= S.cap * 0.8) out.push({ id: `cap80-${m}`, level: 'warn', text: `Vous avez utilisé ${Math.round(total / S.cap * 100)} % de votre plafond mensuel.` });
     else if (dom >= 5) {
       const proj = total / dom * days;
-      if (proj > S.cap) out.push({ id: `proj-${m}`, level: 'warn', icon: '📈', text: `À ce rythme, vous dépenserez environ ${fmt(proj)} ce mois-ci, au-dessus de votre plafond (${fmt(S.cap)}).` });
+      if (proj > S.cap) out.push({ id: `proj-${m}`, level: 'warn', text: `À ce rythme, vous dépenserez environ ${fmt(proj)} ce mois-ci, au-dessus de votre plafond (${fmt(S.cap)}).` });
     }
   }
   const bal = sumBy(S.tx, 'saving') - sumBy(S.tx, 'expense');
-  if (bal < 0) out.push({ id: `neg-${m}`, level: 'danger', icon: '🚨', text: `Vos dépenses dépassent vos économies de ${fmt(-bal)}.` });
+  if (bal < 0) out.push({ id: `neg-${m}`, level: 'danger', text: `Vos dépenses dépassent vos économies de ${fmt(-bal)}.` });
 
   // Dépenses inhabituelles (3 derniers jours) : au moins 2,5× la médiane de la catégorie
   const recent = S.tx.filter(t => t.type === 'expense' && t.date >= addDays(today(), -2));
@@ -148,34 +150,34 @@ function computeAlerts() {
     const prev = S.tx.filter(x => x.type === 'expense' && x.category === t.category && x.id !== t.id && x.date <= t.date).map(x => x.amount);
     if (prev.length >= 4) {
       const med = median(prev);
-      if (med > 0 && t.amount >= med * 2.5) out.push({ id: `odd-${t.id}`, level: 'warn', icon: '🔍', text: `Dépense inhabituelle en « ${t.category} » : ${fmt(t.amount)} (habituellement ~${fmt(med)}).` });
+      if (med > 0 && t.amount >= med * 2.5) out.push({ id: `odd-${t.id}`, level: 'warn', text: `Dépense inhabituelle en « ${t.category} » : ${fmt(t.amount)} (habituellement ~${fmt(med)}).` });
     }
   }
   if (S.tx.length) {
     const last = S.tx.reduce((a, t) => t.date > a ? t.date : a, '0000-00-00');
     const gap = daysBetween(last, today());
-    if (gap >= 3) out.push({ id: `idle-${today()}`, level: 'info', icon: '📝', text: `Aucune opération depuis ${gap} jours. Pensez à noter vos dépenses.` });
+    if (gap >= 3) out.push({ id: `idle-${today()}`, level: 'info', text: `Aucune opération depuis ${gap} jours. Pensez à noter vos dépenses.` });
   }
   const lq = qPrev(qOf(m));
   if (S.tx.filter(t => qMonths(lq).includes(t.date.slice(0, 7))).length >= 10 && !(S.bilanSeen || {})[lq])
-    out.push({ id: `bilan-${lq}`, level: 'info', icon: '📅', text: `Votre bilan ${qLabel(lq)} est prêt : ouvrez l'onglet Analyse.` });
-  if (S.goal > 0 && sumBy(S.tx, 'saving') >= S.goal) out.push({ id: `goal-${S.goal}`, level: 'ok', icon: '🎉', text: `Objectif d'économie atteint : ${fmt(S.goal)} !` });
+    out.push({ id: `bilan-${lq}`, level: 'info', text: `Votre bilan ${qLabel(lq)} est prêt : ouvrez l'onglet Analyse.` });
+  if (S.goal > 0 && sumBy(S.tx, 'saving') >= S.goal) out.push({ id: `goal-${S.goal}`, level: 'ok', text: `Objectif d'économie atteint : ${fmt(S.goal)} !` });
   // Bilan annuel : disponible dès janvier suivant
   const curY = today().slice(0, 4), prevY = String(Number(curY) - 1);
   const anCount = S.tx.filter(t => t.date.startsWith(prevY)).length;
   if (anCount >= 20 && !(S.bilanSeen || {})['an-' + prevY])
-    out.push({ id: `bilan-an-${prevY}`, level: 'info', icon: '📆', text: `Votre bilan annuel ${prevY} est prêt : ouvrez l'onglet Analyse.` });
+    out.push({ id: `bilan-an-${prevY}`, level: 'info', text: `Votre bilan annuel ${prevY} est prêt : ouvrez l'onglet Analyse.` });
   return out;
 }
 
 function renderAlerts(list) {
   $('alertsCard').hidden = !list.length;
-  $('alertsList').innerHTML = list.map(a => `<div class="alert ${a.level}"><span>${a.icon}</span><span>${esc(a.text)}</span></div>`).join('');
+  $('alertsList').innerHTML = list.map(a => `<div class="alert ${a.level}"><span>${esc(a.text)}</span></div>`).join('');
 }
 
 function canNotify() { return 'Notification' in window && Notification.permission === 'granted' && S.notif; }
 function pushNotification(a) {
-  const opts = { body: a.text, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: a.id };
+  const opts = { body: a.text, badge: 'icons/icon-192.png', tag: a.id };
   if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
     navigator.serviceWorker.ready.then(r => r.showNotification('Gourdes²', opts)).catch(() => { try { new Notification('Gourdes²', opts); } catch (e) { } });
   } else { try { new Notification('Gourdes²', opts); } catch (e) { } }
@@ -201,7 +203,7 @@ function render() {
   $('sTotExp').textContent = fmt(totExp);
   const bal = totSav - totExp;
   $('sBal').textContent = fmt(bal);
-  $('sBal').style.color = bal < 0 ? 'var(--red)' : 'var(--green)';
+  $('sBal').style.color = bal < 0 ? 'var(--neg)' : 'var(--ink)';
 
   $('goalBox').hidden = !(S.goal > 0);
   if (S.goal > 0) {
@@ -258,14 +260,14 @@ function fillCatFilter() {
 function renderHist() {
   fillCatFilter();
   const list = getFiltered();
-  $('histCount').textContent = `· ${list.length} ligne${list.length > 1 ? 's' : ''}`;
+  $('histCount').textContent = `${list.length} ligne${list.length > 1 ? 's' : ''}`;
   $('hSav').textContent = fmt(sumBy(list, 'saving'));
   $('hExp').textContent = fmt(sumBy(list, 'expense'));
   $('list').innerHTML = list.length ? list.map(t => {
     const d = t.date.split('-').reverse().join('/');
     return `<div class="tx"><div class="main"><b>${esc(t.category)}</b><small>${d}${t.note ? ' · ' + esc(t.note) : ''}</small></div>
       <span class="amt ${t.type}">${t.type === 'expense' ? '−' : '+'}${fmt(t.amount)}</span>
-      <button data-del="${t.id}" aria-label="Supprimer">🗑️</button></div>`;
+      <button data-del="${t.id}" aria-label="Supprimer">Supprimer</button></div>`;
   }).join('') : '<div class="empty">Aucune ligne ne correspond</div>';
 }
 ['fPeriod', 'fType', 'fCat', 'fMin', 'fText'].forEach(id => $(id).addEventListener('input', renderHist));
@@ -297,9 +299,9 @@ function trendSvg(data) {
   let s = `<svg viewBox="0 0 ${W} ${H + 22}" width="100%" role="img" aria-label="Économies et dépenses sur 6 mois">`;
   data.forEach((d, i) => {
     const x = 8 + i * gap + gap / 2, hs = d.sav / max * H, he = d.exp / max * H;
-    s += `<rect x="${x - bw - 1}" y="${H - hs}" width="${bw}" height="${hs}" rx="3" fill="var(--green)"><title>${d.label} · économies ${fmt(d.sav)}</title></rect>`;
-    s += `<rect x="${x + 1}" y="${H - he}" width="${bw}" height="${he}" rx="3" fill="var(--red)"><title>${d.label} · dépenses ${fmt(d.exp)}</title></rect>`;
-    s += `<text x="${x}" y="${H + 15}" text-anchor="middle" font-size="10" fill="var(--muted)">${esc(d.label)}</text>`;
+    s += `<rect x="${x - bw - 1}" y="${H - hs}" width="${bw}" height="${hs}" rx="1" fill="var(--c-sav)"><title>${d.label} · économies ${fmt(d.sav)}</title></rect>`;
+    s += `<rect x="${x + 1}" y="${H - he}" width="${bw}" height="${he}" rx="1" fill="var(--c-exp)"><title>${d.label} · dépenses ${fmt(d.exp)}</title></rect>`;
+    s += `<text x="${x}" y="${H + 15}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${esc(d.label)}</text>`;
   });
   return s + `<line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/></svg>`;
 }
@@ -320,7 +322,7 @@ function renderAna() {
   const net = cur.sav - cur.exp;
   $('anaStats').innerHTML = `
     <div class="stat exp"><small>Dépensé</small><b>${fmt(cur.exp)}</b>
-      ${delta === null ? '<em class="muted">pas de mois précédent</em>' : `<em class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta))} % vs mois préc.</em>`}</div>
+      ${delta === null ? '<em class="muted">pas de mois précédent</em>' : `<em class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(Math.round(delta))} % vs mois préc.</em>`}</div>
     <div class="stat sav"><small>Économisé</small><b>${fmt(cur.sav)}</b><em class="muted">Net : ${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}</em></div>
     <div class="stat"><small>Moyenne par jour</small><b>${fmt(avg)}</b></div>
     <div class="stat"><small>Prévision fin de mois</small><b>${proj === null ? '—' : fmt(proj)}</b></div>
@@ -330,7 +332,7 @@ function renderAna() {
   const cats = [...new Set([...Object.keys(by), ...Object.keys(pby)])].sort((a, b) => (by[b] || 0) - (by[a] || 0));
   $('anaCats').innerHTML = cats.length ? cats.map(c => {
     const v = by[c] || 0, p = pby[c] || 0, d = v - p;
-    const note = p === 0 ? (v ? 'nouveau' : '') : `${d > 0 ? '▲' : d < 0 ? '▼' : '='} ${fmt(Math.abs(d))}`;
+    const note = p === 0 ? (v ? 'nouveau' : '') : `${d > 0 ? '+' + fmt(d) : d < 0 ? '−' + fmt(-d) : 'stable'}`;
     return `<div class="catrow"><div><span>${esc(c)}</span><span><b>${fmt(v)}</b> <small class="${d > 0 ? 'up' : 'down'}">${note}</small></span></div>
       <div class="bar"><i style="width:${cur.exp ? v / cur.exp * 100 : 0}%"></i></div></div>`;
   }).join('') : '<div class="empty">Aucune dépense ce mois-ci</div>';
@@ -411,21 +413,21 @@ function renderBilan() {
   const delta = d.prevCount >= 10 && d.prevExp > 0 ? (d.totExp - d.prevExp) / d.prevExp * 100 : null;
   const per100 = d.totExp > 0 ? Math.round(d.totSav / d.totExp * 100) : null;
   const pts = bilanPoints(d);
-  const reliability = d.daysWith / d.totalDays < 0.4 ? `<div class="alert info"><span>ℹ️</span><span>Vous n'avez noté des opérations que ${d.daysWith} jour(s) sur ${d.totalDays}. Le bilan est probablement incomplet.</span></div>` : '';
+  const reliability = d.daysWith / d.totalDays < 0.4 ? `<div class="alert info"><span>Vous n'avez noté des opérations que ${d.daysWith} jour(s) sur ${d.totalDays}. Le bilan est probablement incomplet.</span></div>` : '';
   const cats = Object.entries(d.cats).sort((a, b) => b[1] - a[1]);
   $('bilanBody').innerHTML = `
-    ${d.partial ? '<div class="alert info"><span>⏳</span><span>Trimestre en cours : les chiffres sont partiels.</span></div>' : ''}
+    ${d.partial ? '<div class="alert info"><span>Trimestre en cours : les chiffres sont partiels.</span></div>' : ''}
     ${reliability}
     <div class="grid" style="margin-top:10px">
-      <div class="stat exp"><small>Dépensé</small><b>${fmt(d.totExp)}</b>${delta === null ? '' : `<em class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta))} % vs trim. préc.</em>`}</div>
+      <div class="stat exp"><small>Dépensé</small><b>${fmt(d.totExp)}</b>${delta === null ? '' : `<em class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(Math.round(delta))} % vs trim. préc.</em>`}</div>
       <div class="stat sav"><small>Économisé</small><b>${fmt(d.totSav)}</b>${per100 === null ? '' : `<em class="muted">${per100} G pour 100 G dépensés</em>`}</div>
     </div>
     <div class="mrow">${d.monthly.map(x => `<span><b>${fmt(x.v)}</b>${monthShort(x.m)}</span>`).join('')}</div>
     <div class="sub">Où part l'argent</div>
-    ${cats.map(([c, v]) => { const p = d.pcats[c] || 0, dd = v - p; return `<div class="catrow"><div><span>${esc(c)} <small>${Math.round(v / d.totExp * 100)} %</small></span><span><b>${fmt(v)}</b> ${d.prevCount >= 10 ? `<small class="${dd > 0 ? 'up' : 'down'}">${p === 0 ? 'nouveau' : (dd > 0 ? '▲ ' : dd < 0 ? '▼ ' : '= ') + fmt(Math.abs(dd))}</small>` : ''}</span></div><div class="bar"><i style="width:${v / d.totExp * 100}%"></i></div></div>`; }).join('')}
+    ${cats.map(([c, v]) => { const p = d.pcats[c] || 0, dd = v - p; return `<div class="catrow"><div><span>${esc(c)} <small>${Math.round(v / d.totExp * 100)} %</small></span><span><b>${fmt(v)}</b> ${d.prevCount >= 10 ? `<small class="${dd > 0 ? 'up' : 'down'}">${p === 0 ? 'nouveau' : (dd > 0 ? '+' : dd < 0 ? '−' : '') + fmt(Math.abs(dd))}</small>` : ''}</span></div><div class="bar"><i style="width:${v / d.totExp * 100}%"></i></div></div>`; }).join('')}
     <div class="sub">À changer</div>
-    ${pts.bad.length ? pts.bad.map(t => `<div class="alert warn"><span>🎯</span><span>${esc(t)}</span></div>`).join('') : '<div class="alert ok"><span>👍</span><span>Rien d\'alarmant ce trimestre. Continuez ainsi.</span></div>'}
-    ${pts.good.length ? '<div class="sub">Points positifs</div>' + pts.good.map(t => `<div class="alert ok"><span>✅</span><span>${esc(t)}</span></div>`).join('') : ''}`;
+    ${pts.bad.length ? pts.bad.map(t => `<div class="alert warn"><span>${esc(t)}</span></div>`).join('') : '<div class="alert ok"><span>Rien d\'alarmant ce trimestre. Continuez ainsi.</span></div>'}
+    ${pts.good.length ? '<div class="sub">Points positifs</div>' + pts.good.map(t => `<div class="alert ok"><span>${esc(t)}</span></div>`).join('') : ''}`;
 }
 function markBilanSeen() {
   const k = $('bilanQ').value; if (!k || k === curQ()) return;
@@ -509,7 +511,7 @@ function renderBilanAn() {
   const deltaSav = d.prevCount >= 20 && d.prevSav > 0 ? (d.totSav - d.prevSav) / d.prevSav * 100 : null;
   const per100 = d.totExp > 0 ? Math.round(d.totSav / d.totExp * 100) : null;
   const pts = anPoints(d);
-  const reliability = d.daysWith / d.totalDays < 0.3 ? `<div class="alert info"><span>ℹ️</span><span>Opérations notées ${d.daysWith} jour(s) sur ${d.totalDays} : le bilan est probablement incomplet.</span></div>` : '';
+  const reliability = d.daysWith / d.totalDays < 0.3 ? `<div class="alert info"><span>Opérations notées ${d.daysWith} jour(s) sur ${d.totalDays} : le bilan est probablement incomplet.</span></div>` : '';
   const cats = Object.entries(d.cats).sort((a, b) => b[1] - a[1]);
   // Graphique mensuel simplifié (barres économies/dépenses)
   const active = d.monthly.filter(x => x.exp > 0 || x.sav > 0);
@@ -518,26 +520,26 @@ function renderBilanAn() {
   let svgBars = `<svg viewBox="0 0 ${W} ${H + 18}" width="100%" role="img" aria-label="Dépenses et économies mensuelles ${y}">`;
   d.monthly.forEach((x, i) => {
     const cx = 8 + i * gap + gap / 2, hs = x.sav / maxV * H, he = x.exp / maxV * H;
-    svgBars += `<rect x="${cx - bw - 1}" y="${H - hs}" width="${bw}" height="${hs}" rx="2" fill="var(--green)"><title>${x.m} économies ${fmt(x.sav)}</title></rect>`;
-    svgBars += `<rect x="${cx + 1}" y="${H - he}" width="${bw}" height="${he}" rx="2" fill="var(--red)"><title>${x.m} dépenses ${fmt(x.exp)}</title></rect>`;
-    if (i % 2 === 0 || i === 11) svgBars += `<text x="${cx}" y="${H + 13}" text-anchor="middle" font-size="9" fill="var(--muted)">${monthShort(x.m)}</text>`;
+    svgBars += `<rect x="${cx - bw - 1}" y="${H - hs}" width="${bw}" height="${hs}" rx="1" fill="var(--c-sav)"><title>${x.m} économies ${fmt(x.sav)}</title></rect>`;
+    svgBars += `<rect x="${cx + 1}" y="${H - he}" width="${bw}" height="${he}" rx="1" fill="var(--c-exp)"><title>${x.m} dépenses ${fmt(x.exp)}</title></rect>`;
+    if (i % 2 === 0 || i === 11) svgBars += `<text x="${cx}" y="${H + 13}" text-anchor="middle" font-size="9" fill="var(--ink-3)">${monthShort(x.m)}</text>`;
   });
   svgBars += `<line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/></svg>`;
   $('bilanAnBody').innerHTML = `
-    ${d.isCur ? '<div class="alert info"><span>⏳</span><span>Année en cours : les chiffres sont partiels.</span></div>' : ''}
+    ${d.isCur ? '<div class="alert info"><span>Année en cours : les chiffres sont partiels.</span></div>' : ''}
     ${reliability}
     <div class="grid" style="margin-top:10px">
-      <div class="stat exp"><small>Dépensé</small><b>${fmt(d.totExp)}</b>${delta === null ? '' : `<em class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '▲' : '▼'} ${Math.abs(Math.round(delta))} % vs an préc.</em>`}</div>
-      <div class="stat sav"><small>Économisé</small><b>${fmt(d.totSav)}</b>${deltaSav === null ? '' : `<em class="${deltaSav > 0 ? 'down' : 'up'}">${deltaSav > 0 ? '▲' : '▼'} ${Math.abs(Math.round(deltaSav))} % vs an préc.</em>`}</div>
+      <div class="stat exp"><small>Dépensé</small><b>${fmt(d.totExp)}</b>${delta === null ? '' : `<em class="${delta > 0 ? 'up' : 'down'}">${delta > 0 ? '+' : '−'}${Math.abs(Math.round(delta))} % vs an préc.</em>`}</div>
+      <div class="stat sav"><small>Économisé</small><b>${fmt(d.totSav)}</b>${deltaSav === null ? '' : `<em class="${deltaSav > 0 ? 'down' : 'up'}">${deltaSav > 0 ? '+' : '−'}${Math.abs(Math.round(deltaSav))} % vs an préc.</em>`}</div>
       ${per100 !== null ? `<div class="stat wide"><small>Taux d'épargne</small><b>${per100} G économisés pour 100 G dépensés</b></div>` : ''}
     </div>
     ${svgBars}
-    <div class="legend"><span><i style="background:var(--green)"></i>Économies</span><span><i style="background:var(--red)"></i>Dépenses</span></div>
+    <div class="legend"><span><i style="background:var(--c-sav)"></i>Économies</span><span><i style="background:var(--c-exp)"></i>Dépenses</span></div>
     <div class="sub">Où part l'argent</div>
-    ${cats.map(([c, v]) => { const p = d.pcats[c] || 0, dd = v - p; return `<div class="catrow"><div><span>${esc(c)} <small>${Math.round(v / d.totExp * 100)} %</small></span><span><b>${fmt(v)}</b> ${d.prevCount >= 20 ? `<small class="${dd > 0 ? 'up' : 'down'}">${p === 0 ? 'nouveau' : (dd > 0 ? '▲ ' : dd < 0 ? '▼ ' : '= ') + fmt(Math.abs(dd))}</small>` : ''}</span></div><div class="bar"><i style="width:${v / d.totExp * 100}%"></i></div></div>`; }).join('')}
+    ${cats.map(([c, v]) => { const p = d.pcats[c] || 0, dd = v - p; return `<div class="catrow"><div><span>${esc(c)} <small>${Math.round(v / d.totExp * 100)} %</small></span><span><b>${fmt(v)}</b> ${d.prevCount >= 20 ? `<small class="${dd > 0 ? 'up' : 'down'}">${p === 0 ? 'nouveau' : (dd > 0 ? '+' : dd < 0 ? '−' : '') + fmt(Math.abs(dd))}</small>` : ''}</span></div><div class="bar"><i style="width:${v / d.totExp * 100}%"></i></div></div>`; }).join('')}
     <div class="sub">À changer</div>
-    ${pts.bad.length ? pts.bad.map(t => `<div class="alert warn"><span>🎯</span><span>${esc(t)}</span></div>`).join('') : '<div class="alert ok"><span>👍</span><span>Rien d\'alarmant cette année. Continuez ainsi.</span></div>'}
-    ${pts.good.length ? '<div class="sub">Points positifs</div>' + pts.good.map(t => `<div class="alert ok"><span>✅</span><span>${esc(t)}</span></div>`).join('') : ''}`;
+    ${pts.bad.length ? pts.bad.map(t => `<div class="alert warn"><span>${esc(t)}</span></div>`).join('') : '<div class="alert ok"><span>Rien d\'alarmant cette année. Continuez ainsi.</span></div>'}
+    ${pts.good.length ? '<div class="sub">Points positifs</div>' + pts.good.map(t => `<div class="alert ok"><span>${esc(t)}</span></div>`).join('') : ''}`;
 }
 $('bilanAnY').onchange = () => { renderBilanAn(); markBilanAnSeen(); };
 $('bilanAnAi').onclick = () => {
@@ -690,10 +692,10 @@ async function ask(q, shown) {
   aiBusy = false; renderAiState(); renderChat(false);
 }
 const QUICK = [
-  ['📊 Analyser mon mois', 'Analyse mon mois en cours : points forts, points faibles et 3 actions concrètes.'],
-  ['🔍 Dépenses à réduire', 'Repère mes dépenses inhabituelles ou celles que je peux réduire, avec des montants.'],
-  ['🎯 Atteindre mon objectif', 'Fais-moi un plan réaliste pour atteindre mon objectif d\'économie (par semaine).'],
-  ['📈 Prévision', 'Fais une prévision de fin de mois (dépenses et économies) et dis-moi si je risque de dépasser.']
+  ['Analyser mon mois', 'Analyse mon mois en cours : points forts, points faibles et 3 actions concrètes.'],
+  ['Dépenses à réduire', 'Repère mes dépenses inhabituelles ou celles que je peux réduire, avec des montants.'],
+  ['Atteindre mon objectif', 'Fais-moi un plan réaliste pour atteindre mon objectif d\'économie (par semaine).'],
+  ['Prévision', 'Fais une prévision de fin de mois (dépenses et économies) et dis-moi si je risque de dépasser.']
 ];
 $('aiQuick').innerHTML = QUICK.map((q, i) => `<button type="button" class="chip" data-q="${i}">${q[0]}</button>`).join('');
 $('aiQuick').onclick = e => { const i = e.target.dataset && e.target.dataset.q; if (i !== undefined) ask(QUICK[i][1]); };
@@ -727,7 +729,7 @@ function parseTx(text) {
 }
 $('aiAddBtn').onclick = async () => {
   const txt = $('aiAddText').value.trim(); if (!txt || aiBusy) return;
-  aiBusy = true; renderAiState(); $('aiAddBtn').textContent = 'Analyse…'; pending = []; renderPending();
+  aiBusy = true; renderAiState(); $('aiAddBtn').textContent = 'Analyse en cours'; pending = []; renderPending();
   const sys = `Tu extrais des opérations d'argent depuis une phrase en français ou créole haïtien. Date du jour : ${today()}.
 Réponds UNIQUEMENT par un tableau JSON, sans texte autour, chaque élément : {"type":"expense"|"saving","amount":entier en gourdes,"category":string,"note":string courte,"date":"AAAA-MM-JJ"}.
 Catégories de dépense autorisées : ${CATS.expense.join(', ')}.
@@ -738,7 +740,7 @@ Catégories d'économie autorisées : ${CATS.saving.join(', ')}.
     pending = parseTx(out);
     if (!pending.length) toast('Je n\'ai rien compris, reformulez');
   } catch (e) { toast(e.message); }
-  aiBusy = false; $('aiAddBtn').textContent = 'Analyser ma phrase'; renderAiState(); renderPending();
+  aiBusy = false; $('aiAddBtn').textContent = 'Analyser la phrase'; renderAiState(); renderPending();
 };
 
 /* Réglages IA */
@@ -747,7 +749,7 @@ $('aiSave').onclick = async () => {
   AI.key = $('aiKey').value.trim(); AI.model = $('aiModel').value.trim() || DEFAULT_MODEL; saveAI(); renderAiState();
   if (!AI.key) { toast('Clé retirée'); return; }
   $('aiSave').disabled = true; $('aiSave').textContent = 'Test…';
-  try { await callAI('Réponds uniquement : ok', [{ role: 'user', content: 'test' }], 10); toast('✅ IA connectée'); }
+  try { await callAI('Réponds uniquement : ok', [{ role: 'user', content: 'test' }], 10); toast('IA connectée'); }
   catch (e) { toast(e.message); }
   $('aiSave').disabled = false; $('aiSave').textContent = 'Enregistrer et tester';
 };
@@ -761,7 +763,7 @@ function renderNotif() {
   const on = p === 'granted' && S.notif;
   $('notifBtn').hidden = false;
   $('notifBtn').textContent = on ? 'Désactiver les notifications' : 'Activer les notifications';
-  $('notifState').textContent = on ? '✅ Actives : vous serez notifié des nouvelles alertes à l\'ouverture de l\'app.' : '';
+  $('notifState').textContent = on ? 'Actives : vous serez notifié des nouvelles alertes à l\'ouverture de l\'app.' : '';
 }
 $('notifBtn').onclick = async () => {
   if (S.notif && Notification.permission === 'granted') { S.notif = false; save(); renderNotif(); return; }
@@ -902,11 +904,11 @@ async function sync() {
       else { const g = await gh('/gists', { method: 'POST', body: JSON.stringify({ description: GIST_DESC, public: false, files: { [GIST_FILE]: { content: JSON.stringify(merged) } } }) }); SY.gist = g.id; }
     }
     lastHash = canon(payload()); SY.last = Date.now(); saveSY(); ok = true;
-    syncMsg = '✅ Synchronisé à ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    syncMsg = 'Synchronisé à ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     if (changedLocal) { loadBudgetForm(); render(); checkAlerts(false); }
   } catch (e) {
     lastAuthError = !!e.auth;
-    syncMsg = e instanceof TypeError ? '📴 Hors ligne : la synchronisation reprendra plus tard.' : '⚠️ ' + e.message;
+    syncMsg = e instanceof TypeError ? 'Hors ligne : la synchronisation reprendra plus tard.' : e.message;
   }
   syncing = false; renderSync();
   if (syncAgain) { syncAgain = false; schedSync(); }
@@ -933,10 +935,42 @@ $('syncDisable').onclick = () => {
   SY = { token: '', gist: '', last: 0 }; saveSY(); lastHash = ''; syncMsg = ''; renderSync(); toast('Synchronisation désactivée');
 };
 
+/* ---------------- Analyse : Mois / Trimestre / Année ---------------- */
+document.querySelectorAll('#anaNav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#anaNav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === 'ana-' + b.dataset.ana));
+});
+
+/* ---------------- Citations ---------------- */
+const QUOTES = [
+  { t: 'N’épargnez pas ce qu’il reste après avoir dépensé ; dépensez ce qu’il reste après avoir épargné.', a: 'Warren Buffett' },
+  { t: 'Méfiez-vous des petites dépenses : une petite fuite peut couler un grand navire.', a: 'Benjamin Franklin', s: 'The Way to Wealth, 1758' },
+  { t: 'Rappelez-vous que l’argent est de nature féconde. L’argent peut engendrer de l’argent, et ses fruits peuvent en engendrer davantage.', a: 'Benjamin Franklin', s: 'Advice to a Young Tradesman, 1748' },
+  { t: 'La première règle de l’effet cumulé : ne jamais l’interrompre sans nécessité.', a: 'Charlie Munger' },
+  { t: 'De petits choix judicieux, de la constance et du temps produisent une différence radicale.', a: 'Darren Hardy', s: 'The Compound Effect' },
+  { t: 'Le succès n’est rien d’autre que quelques disciplines simples, pratiquées chaque jour.', a: 'Jim Rohn' },
+  { t: 'Quelqu’un se repose aujourd’hui à l’ombre parce que quelqu’un a planté un arbre il y a longtemps.', a: 'Warren Buffett' },
+  { t: 'Piti piti, zwazo fè nich li.', a: 'Proverbe haïtien', s: 'Petit à petit, l’oiseau fait son nid' },
+  { t: 'Nous sommes ce que nous faisons de manière répétée. L’excellence n’est donc pas un acte, mais une habitude.', a: 'Will Durant', s: 'The Story of Philosophy, à propos d’Aristote' },
+  { t: 'Le gros de l’argent ne se gagne pas en achetant et en vendant, mais en attendant.', a: 'Charlie Munger' },
+  { t: 'Le pauvre n’est pas celui qui a trop peu, mais celui qui désire davantage.', a: 'Sénèque', s: 'Lettres à Lucilius' },
+  { t: 'Si vous achetez ce dont vous n’avez pas besoin, vous devrez bientôt vendre ce dont vous avez besoin.', a: 'Warren Buffett' },
+  { t: 'De petits coups répétés abattent de grands chênes.', a: 'Benjamin Franklin', s: 'Poor Richard’s Almanack' }
+];
+let quoteIdx = Math.abs(daysBetween('2020-01-01', today())) % QUOTES.length;
+function renderQuote() {
+  const q = QUOTES[quoteIdx];
+  $('quoteText').textContent = '\u201C' + q.t + '\u201D';
+  $('quoteAuthor').textContent = q.a;
+  $('quoteSrc').textContent = q.s || '';
+}
+$('quoteNext').onclick = () => { quoteIdx = (quoteIdx + 1) % QUOTES.length; renderQuote(); };
+
 /* ---------------- Démarrage ---------------- */
 $('date').value = today();
 $('month').value = today().slice(0, 7);
 setType('expense');
+renderQuote();
 loadBudgetForm();
 render();
 renderChat(false);
