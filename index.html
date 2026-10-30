@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f6f4a">
+<meta name="description" content="Suivez vos dépenses et économies en gourdes, avec analyses et assistant IA.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gourdes²">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<title>Gourdes²</title>
+</head>
+<body>
+<header>
+  <h1>💰 Gourdes²</h1>
+  <p>Dépenses, économies, analyses et conseils</p>
+</header>
+
+<main>
+  <!-- ============ ACCUEIL ============ -->
+  <section id="tab-home" class="active">
+    <div class="card" id="alertsCard" hidden>
+      <h2>🔔 Alertes</h2>
+      <div id="alertsList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Résumé</h2>
+      <label style="margin-top:0">Mois</label>
+      <input type="month" id="month">
+      <div class="grid" style="margin-top:12px">
+        <div class="stat sav"><small>Économies du mois</small><b id="sMonthSav">0 G</b></div>
+        <div class="stat exp"><small>Dépenses du mois</small><b id="sMonthExp">0 G</b></div>
+        <div class="stat sav"><small>Total économisé</small><b id="sTotSav">0 G</b></div>
+        <div class="stat exp"><small>Total dépensé</small><b id="sTotExp">0 G</b></div>
+        <div class="stat wide"><small>Reste (économies − dépenses)</small><b id="sBal">0 G</b></div>
+      </div>
+      <div id="goalBox" hidden style="margin-top:14px">
+        <div class="row"><span>🎯 Objectif d'économie</span><span id="goalTxt"></span></div>
+        <div class="bar"><i id="goalBar" style="width:0"></i></div>
+      </div>
+      <div id="capBox" hidden style="margin-top:14px">
+        <div class="row"><span>🧱 Plafond de dépenses du mois</span><span id="capTxt"></span></div>
+        <div class="bar warn"><i id="capBar" style="width:0"></i></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Ajouter</h2>
+      <div class="seg" id="seg">
+        <button class="on expense" data-t="expense">➖ Dépense</button>
+        <button data-t="saving">➕ Économie</button>
+      </div>
+      <label>Montant (G)</label>
+      <input type="number" id="amount" inputmode="numeric" min="1" step="1" placeholder="0">
+      <div class="chips" id="chips"></div>
+      <div class="hint" id="breakdown"></div>
+      <label>Catégorie</label>
+      <select id="cat"></select>
+      <label>Date</label>
+      <input type="date" id="date">
+      <label>Note (facultatif)</label>
+      <input type="text" id="note" placeholder="Ex : marché, transport, sòl…" maxlength="80">
+      <button class="btn expense" id="addBtn">Ajouter la dépense</button>
+      <button class="btn ghost" id="goAiAdd">✨ Ajouter en écrivant une phrase (IA)</button>
+    </div>
+
+    <div class="card">
+      <h2>Dépenses du mois par catégorie</h2>
+      <div id="cats"></div>
+    </div>
+  </section>
+
+  <!-- ============ HISTORIQUE ============ -->
+  <section id="tab-hist">
+    <div class="card">
+      <h2>Filtrer</h2>
+      <div class="filters">
+        <div><label>Période</label>
+          <select id="fPeriod">
+            <option value="month">Mois choisi (accueil)</option>
+            <option value="30d">30 derniers jours</option>
+            <option value="90d">90 derniers jours</option>
+            <option value="year">Cette année</option>
+            <option value="all">Tout</option>
+          </select></div>
+        <div><label>Type</label>
+          <select id="fType">
+            <option value="all">Tout</option>
+            <option value="expense">Dépenses</option>
+            <option value="saving">Économies</option>
+          </select></div>
+        <div><label>Catégorie</label><select id="fCat"></select></div>
+        <div><label>Montant minimum (G)</label><input type="number" id="fMin" inputmode="numeric" min="0" placeholder="0"></div>
+        <div class="full"><label>Recherche (note ou catégorie)</label><input type="search" id="fText" placeholder="Ex : marché"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="link" id="fReset">Réinitialiser</button>
+        <button class="link" id="fCsv">⬇️ Exporter la sélection (CSV)</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Sélection <span id="histCount" class="muted"></span></h2>
+      <div class="grid" style="margin-bottom:8px">
+        <div class="stat sav"><small>Économies</small><b id="hSav">0 G</b></div>
+        <div class="stat exp"><small>Dépenses</small><b id="hExp">0 G</b></div>
+      </div>
+      <div id="list"></div>
+    </div>
+  </section>
+
+  <!-- ============ ANALYSE ============ -->
+  <section id="tab-ana">
+    <div class="card" id="bilanCard">
+      <h2>📅 Bilan trimestriel</h2>
+      <select id="bilanQ" aria-label="Choisir le trimestre"></select>
+      <div id="bilanBody"></div>
+      <button class="btn" id="bilanAi">🤖 Bilan détaillé par l'IA</button>
+    </div>
+    <div class="card" id="bilanAnCard">
+      <h2>📆 Bilan annuel</h2>
+      <select id="bilanAnY" aria-label="Choisir l'année"></select>
+      <div id="bilanAnBody"></div>
+      <button class="btn" id="bilanAnAi">🤖 Bilan annuel par l'IA</button>
+    </div>
+    <div class="card">
+      <h2>Évolution sur 6 mois <span class="muted" id="anaMonth"></span></h2>
+      <div id="trend"></div>
+      <div class="legend"><span><i style="background:var(--green)"></i>Économies</span><span><i style="background:var(--red)"></i>Dépenses</span></div>
+    </div>
+    <div class="card">
+      <h2>Chiffres clés du mois</h2>
+      <div class="grid" id="anaStats"></div>
+    </div>
+    <div class="card">
+      <h2>Catégories (vs mois précédent)</h2>
+      <div id="anaCats"></div>
+    </div>
+    <div class="card">
+      <h2>5 plus grosses dépenses</h2>
+      <div id="anaTop"></div>
+    </div>
+  </section>
+
+  <!-- ============ IA ============ -->
+  <section id="tab-ai">
+    <div class="card" id="aiNoKey" hidden>
+      <h2>🔑 Clé API requise</h2>
+      <p class="hint" style="margin-top:0">Ajoutez votre clé API Google Gemini dans l'onglet <b>Plus</b> pour activer l'assistant.</p>
+      <button class="btn" data-go="more">Aller dans Plus</button>
+    </div>
+
+    <div class="card" id="aiAddCard">
+      <h2>✨ Ajout intelligent</h2>
+      <p class="hint" style="margin-top:0">Écrivez normalement, l'IA remplit pour vous. Ex : « 250 au marché hier, 100 transport, j'ai mis 500 de côté ».</p>
+      <textarea id="aiAddText" rows="2" placeholder="Décrivez vos dépenses ou économies…"></textarea>
+      <button class="btn" id="aiAddBtn">Analyser ma phrase</button>
+      <div id="aiAddPreview"></div>
+    </div>
+
+    <div class="card">
+      <h2>🤖 Assistant financier</h2>
+      <div class="chips" id="aiQuick" style="margin-top:0"></div>
+      <div id="chat"></div>
+      <div class="askrow">
+        <textarea id="aiQ" rows="1" placeholder="Posez une question sur vos finances…"></textarea>
+        <button class="send" id="aiSend" aria-label="Envoyer">➤</button>
+      </div>
+      <button class="link" id="aiClear" style="margin-top:8px">Effacer la conversation</button>
+      <p class="hint">Vos montants, catégories et notes récentes sont envoyés à l'API pour répondre. Les conseils sont indicatifs.</p>
+    </div>
+  </section>
+
+  <!-- ============ PLUS ============ -->
+  <section id="tab-more">
+    <div class="card">
+      <h2>🎯 Objectif et budgets</h2>
+      <label style="margin-top:0">Objectif d'économie total (G)</label>
+      <input type="number" id="goal" inputmode="numeric" min="0" placeholder="Ex : 50000">
+      <label>Plafond de dépenses par mois (G)</label>
+      <input type="number" id="cap" inputmode="numeric" min="0" placeholder="Ex : 20000">
+      <label>Budget mensuel par catégorie (G) — laissez vide si aucun</label>
+      <div id="budgets"></div>
+      <button class="btn" id="budgetSave">Enregistrer</button>
+    </div>
+
+    <div class="card">
+      <h2>💵 Compter mon argent</h2>
+      <p class="hint" style="margin-top:0">Indiquez combien de pièces et billets vous avez, puis ajoutez le total à vos économies.</p>
+      <div id="denoms"></div>
+      <div class="total" id="cashTotal">0 G</div>
+      <button class="btn" id="cashAdd">Ajouter aux économies</button>
+      <button class="btn ghost" id="cashReset">Remettre à zéro</button>
+    </div>
+
+    <div class="card">
+      <h2>🤖 Assistant IA</h2>
+      <label style="margin-top:0">Clé API Google Gemini</label>
+      <input type="password" id="aiKey" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <label>Modèle</label>
+      <input type="text" id="aiModel" list="models" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <datalist id="models">
+        <option value="gemini-2.0-flash">
+        <option value="gemini-2.5-flash">
+        <option value="gemini-2.5-pro">
+      </datalist>
+      <button class="btn" id="aiSave">Enregistrer et tester</button>
+      <button class="btn ghost" id="aiForget">Retirer la clé</button>
+      <p class="hint">La clé reste uniquement dans ce navigateur, sur cet appareil. Créez-la gratuitement sur aistudio.google.com. Ne la mettez jamais dans le code ni sur GitHub.</p>
+    </div>
+
+    <div class="card">
+      <h2>🔔 Notifications</h2>
+      <p class="hint" style="margin-top:0">Les alertes (budget dépassé, dépense inhabituelle, plafond…) s'affichent toujours dans l'app. Vous pouvez aussi les recevoir comme notifications à l'ouverture de l'app.</p>
+      <button class="btn ghost" id="notifBtn">Activer les notifications</button>
+      <div class="hint" id="notifState"></div>
+    </div>
+
+    <div class="card" id="installCard">
+      <h2>📲 Installer sur l'écran d'accueil</h2>
+      <div id="installDone" hidden class="hint" style="margin-top:0">✅ L'application est installée.</div>
+      <button class="btn" id="installBtn" hidden>Installer l'application</button>
+      <div class="hint" id="installHelp"></div>
+    </div>
+
+    <div class="card">
+      <h2>☁️ Synchronisation entre appareils</h2>
+      <div id="syncOffBox">
+        <p class="hint" style="margin-top:0">Retrouvez les mêmes données sur votre téléphone et votre ordinateur. Elles sont enregistrées dans un « gist » secret de votre compte GitHub (gratuit, aucun autre service).</p>
+        <label>Jeton GitHub (droit « gist »)</label>
+        <input type="password" id="syncToken" placeholder="ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="btn" id="syncEnable">Activer la synchronisation</button>
+        <details class="how">
+          <summary>Comment obtenir le jeton ?</summary>
+          <ol>
+            <li>Ouvrez <a href="https://github.com/settings/tokens/new?scopes=gist&description=Mes+Gourdes" target="_blank" rel="noopener">cette page GitHub</a> (connectez-vous si besoin).</li>
+            <li>Laissez uniquement la case <b>gist</b> cochée, choisissez une expiration (ou « No expiration »), puis « Generate token ».</li>
+            <li>Copiez le jeton et collez-le ici. Sur l'autre appareil, collez <b>le même jeton</b>.</li>
+          </ol>
+          <p>Le jeton ne donne accès qu'à vos gists, pas à vos dépôts. Il reste uniquement sur cet appareil. Un gist secret n'est pas listé mais reste accessible à quiconque en connaît l'adresse : n'y mettez rien que vous jugeriez trop sensible dans les notes.</p>
+        </details>
+      </div>
+      <div id="syncOnBox" hidden>
+        <div class="hint" id="syncState" style="margin-top:0"></div>
+        <button class="btn ghost" id="syncNow">🔄 Synchroniser maintenant</button>
+        <button class="btn ghost" id="syncDisable">Désactiver sur cet appareil</button>
+        <p class="hint">La synchronisation se fait automatiquement à chaque changement et à l'ouverture de l'app.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Mes données</h2>
+      <p class="hint" style="margin-top:0">Vos données sont enregistrées sur cet appareil. Faites une sauvegarde de temps en temps (la clé API n'y est pas incluse).</p>
+      <button class="btn ghost" id="exportBtn">⬇️ Exporter une sauvegarde</button>
+      <button class="btn ghost" id="importBtn">⬆️ Importer une sauvegarde</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+      <button class="btn danger" id="resetAll">🗑️ Tout effacer</button>
+    </div>
+  </section>
+</main>
+
+<nav><div>
+  <button class="on" data-tab="home"><span>🏠</span>Accueil</button>
+  <button data-tab="hist"><span>📋</span>Historique</button>
+  <button data-tab="ana"><span>📊</span>Analyse</button>
+  <button data-tab="ai"><span>🤖</span>IA</button>
+  <button data-tab="more"><span>⚙️</span>Plus</button>
+</div></nav>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
