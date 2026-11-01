@@ -2,8 +2,6 @@
 
 Application installable (PWA) pour suivre dépenses et économies en gourdes, avec analyses, alertes, assistant IA et citations sur l'épargne et l'effet cumulé.
 
-> **Nom du dépôt GitHub recommandé : `Gourdes2`** (avec le chiffre 2, pour une URL propre).
-
 ## Mise en ligne sur GitHub Pages
 1. Créez un dépôt GitHub et envoyez **tout le contenu de ce dossier** à la racine (index.html, app.js, style.css, sw.js, manifest.webmanifest, dossier icons).
 2. Settings → Pages → Source : branche `main`, dossier `/ (root)`.
