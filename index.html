@@ -138,14 +138,14 @@
   </section>
 
   <section id="tab-ana">
-    <div class="seg four" id="anaNav">
-      <button class="on" data-ana="month" type="button">Mois</button>
-      <button data-ana="quarter" type="button">Trimestre</button>
-      <button data-ana="year" type="button">Année</button>
-      <button data-ana="proj" type="button">Projection</button>
+    <div class="seg four" id="anaNav" role="tablist" aria-label="Périodes d'analyse">
+      <button class="on" data-ana="month" type="button" role="tab" aria-selected="true">Mois</button>
+      <button data-ana="quarter" type="button" role="tab" aria-selected="false">Trimestre</button>
+      <button data-ana="year" type="button" role="tab" aria-selected="false">Année</button>
+      <button data-ana="proj" type="button" role="tab" aria-selected="false">Projection</button>
     </div>
 
-    <div class="pane active" id="ana-month">
+    <div class="pane active" id="ana-month" role="tabpanel">
       <div class="sec">
         <div class="head"><h2>Évolution sur 6 mois</h2><span class="muted" id="anaMonth"></span></div>
         <div id="trend"></div>
@@ -165,7 +165,7 @@
       </div>
     </div>
 
-    <div class="pane" id="ana-quarter">
+    <div class="pane" id="ana-quarter" role="tabpanel">
       <div class="sec" id="bilanCard">
         <h2>Bilan trimestriel</h2>
         <select id="bilanQ" aria-label="Choisir le trimestre"></select>
@@ -174,7 +174,7 @@
       </div>
     </div>
 
-    <div class="pane" id="ana-year">
+    <div class="pane" id="ana-year" role="tabpanel">
       <div class="sec" id="bilanAnCard">
         <h2>Bilan annuel</h2>
         <select id="bilanAnY" aria-label="Choisir l'année"></select>
@@ -183,7 +183,7 @@
       </div>
     </div>
 
-    <div class="pane" id="ana-proj">
+    <div class="pane" id="ana-proj" role="tabpanel">
       <div class="sec">
         <h2>Effet cumulé</h2>
         <p class="hint">Ce que devient votre épargne si vous gardez le même rythme, avec ou sans intérêt.</p>
@@ -267,7 +267,8 @@
       </datalist>
       <button class="btn" id="aiSave" type="button">Enregistrer et tester</button>
       <button class="btn ghost" id="aiForget" type="button">Retirer la clé</button>
-      <p class="hint">La clé reste dans ce navigateur, sur cet appareil. Créez-la gratuitement sur aistudio.google.com. Ne la placez jamais dans le code ni sur GitHub.</p>
+      <label class="check"><input type="checkbox" id="aiMinimal"> Limiter les données envoyées à l'assistant</label>
+      <p class="hint">Activé : seules les 10 dernières opérations sont envoyées, sans les notes. La clé reste dans ce navigateur, sur cet appareil. Créez-la gratuitement sur aistudio.google.com. Ne la placez jamais dans le code ni sur GitHub.</p>
     </div>
 
     <div class="sec">

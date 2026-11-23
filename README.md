@@ -12,6 +12,7 @@ Application installable (PWA) pour suivre dépenses et économies en gourdes, av
 ## Assistant IA
 Onglet Réglages → collez votre clé API Google Gemini (aistudio.google.com → « Get API key »). Elle reste dans le navigateur de l'appareil.
 Ne la mettez jamais dans le code ni dans le dépôt. Le niveau gratuit de Gemini suffit pour un usage personnel.
+L'option « Limiter les données envoyées à l'assistant » (Réglages → Assistant) réduit le contexte à 10 opérations sans les notes.
 
 ## Synchronisation entre appareils
 Onglet Réglages → « Synchronisation » → collez un jeton GitHub classique avec **uniquement** le droit `gist`
@@ -28,7 +29,7 @@ Onglet Analyse → « Bilan trimestriel » : dépenses et économies des 3 mois,
 Onglet Analyse → « Bilan annuel » : graphique mensuel, taux d'épargne, comparaison avec l'année précédente, catégories, priorités à changer. Une alerte apparaît en début d'année suivante. Minimum 20 opérations requises.
 
 ## Mise à jour
-Quand vous modifiez les fichiers, changez `CACHE = 'gourdes-v13'` dans sw.js (v6, v7…) pour forcer la mise à jour chez les utilisateurs.
+Quand vous modifiez les fichiers, incrémentez `CACHE` dans sw.js (ex. `gourdes-v14`, `gourdes-v15`…) pour forcer la mise à jour chez les utilisateurs. Version actuelle : `gourdes-v14`.
 
 ## Confidentialité
 Onglet Réglages → « Confidentialité » : code PIN de 4 à 8 chiffres (verrouillage après une minute en arrière-plan, empreinte PBKDF2 uniquement) et bouton pour masquer les montants (aussi sur l'Accueil). Le code PIN verrouille l'écran, il ne chiffre pas les données locales.

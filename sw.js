@@ -1,5 +1,5 @@
-// Service worker : fonctionne hors ligne. Réseau d'abord (pour recevoir les mises à jour), cache en secours.
-const CACHE = 'gourdes-v13';
+// Service worker : hors ligne. Cache d'abord pour les fichiers statiques, réseau d'abord pour la navigation.
+const CACHE = 'gourdes-v14';
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
@@ -20,19 +20,31 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const req = e.request;
-  const url = new URL(req.url);
-  // On ne touche ni aux appels API (autre domaine) ni aux requêtes non-GET.
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  e.respondWith(
-    fetch(req)
-      .then(res => {
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+
+  // Navigation : on cherche la version en ligne, et on retombe sur index.html hors ligne.
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req).then(res => {
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copy));
+          caches.open(CACHE).then(c => c.put('index.html', copy)).catch(() => {});
         }
         return res;
-      })
-      .catch(() => caches.match(req).then(r => r || (req.mode === 'navigate' ? caches.match('index.html') : undefined)))
+      }).catch(() => caches.match('index.html'))
+    );
+    return;
+  }
+
+  // Assets : cache d'abord (mises à jour via le changement de CACHE), réseau en secours.
+  e.respondWith(
+    caches.match(req).then(hit => hit || fetch(req).then(res => {
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      }
+      return res;
+    }))
   );
 });
 

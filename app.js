@@ -26,32 +26,76 @@ const shiftMonth = (m, n) => { const [y, mo] = m.split('-').map(Number); const d
 const monthShort = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', ''); };
 const monthLong = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); };
 const dim = k => { const [y, m] = k.split('-').map(Number); return new Date(y, m, 0).getDate(); };
-const sumBy = (arr, ty) => arr.filter(t => t.type === ty).reduce((a, t) => a + t.amount, 0);
+const sumBy = (arr, ty) => {
+  if (arr === S.tx) return getIndex().totals[ty] || 0;   // totale liste : index partagé
+  let n = 0; for (const t of arr) if (t.type === ty) n += t.amount; return n;
+};
 const median = a => { const s = a.slice().sort((x, y) => x - y); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
-const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : '';
+/* Valide une vraie date calendaire (et pas seulement le format AAAA-MM-JJ). */
+const okDate = d => {
+  if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
+  const [y, m, day] = d.split('-').map(Number);
+  const dt = new Date(0); dt.setFullYear(y, m - 1, day);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === day ? d : '';
+};
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function toast(m) {
-  const t = $('toast'); t.textContent = m; t.classList.remove('act'); t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200);
+  const t = $('toast');
+  clearTimeout(toast.t); clearTimeout(toast.u);
+  t.textContent = m; t.classList.remove('act'); t.classList.add('show');
+  toast.t = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
 function toastUndo(m, fn) {
-  const t = $('toast'); t.textContent = m + ' ';
+  const t = $('toast');
+  clearTimeout(toast.t); clearTimeout(toast.u);
+  t.textContent = m + ' ';
   const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Annuler';
-  b.onclick = () => { fn(); toast('Suppression annulée'); };
+  b.onclick = () => { clearTimeout(toast.u); fn(); toast('Suppression annulée'); };
   t.appendChild(b); t.classList.add('show', 'act');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show', 'act'), 6000);
+  /* Minuteur dédié : un toast normal ne peut plus laisser un bouton « Annuler » fantôme. */
+  toast.u = setTimeout(() => { t.classList.remove('show', 'act'); b.remove(); }, 6000);
 }
 
 /* ---------------- Données ---------------- */
 let S = { tx: [], goal: 0, goalDate: '', cap: 0, budgets: {}, seen: {}, notif: false, deleted: {}, settingsAt: 0, bilanSeen: {} };
 try {
   const r = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || 'null');
-  if (r && Array.isArray(r.tx)) S = Object.assign(S, r);
+  if (r && Array.isArray(r.tx)) {
+    S = Object.assign(S, r);
+    S.tx = r.tx.map(cleanTx).filter(Boolean);   // assainit aussi les données déjà enregistrées
+  }
 } catch (e) { }
-const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Enregistrement impossible : stockage plein ou bloqué. Exportez une sauvegarde.'); } };
-const save = () => { persist(); schedSync(); };
+/* Index dérivé des opérations : reconstruit uniquement quand les données changent.
+   Évite les multiples parcours complets de S.tx à chaque rendu/alerte. */
+let IDX = null, IDX_VER = -1, txVersion = 0;
+function getIndex() {
+  if (IDX && IDX_VER === txVersion) return IDX;
+  const byMonth = Object.create(null), byCat = Object.create(null);
+  const totals = { expense: 0, saving: 0 };
+  let minDate = '9999-12-31', count = 0;
+  for (const t of S.tx) {
+    totals[t.type] += t.amount;
+    const mo = t.date.slice(0, 7);
+    (byMonth[mo] || (byMonth[mo] = [])).push(t);
+    const ck = t.type + '|' + t.category;
+    (byCat[ck] || (byCat[ck] = [])).push(t);
+    if (t.date < minDate) minDate = t.date;
+    count++;
+  }
+  IDX = { byMonth, byCat, totals, minDate, count };
+  IDX_VER = txVersion;
+  return IDX;
+}
+function pruneDeleted() {
+  const cut = Date.now() - 365 * 864e5;
+  let n = 0;
+  for (const k in S.deleted) if ((Number(S.deleted[k]) || 0) < cut) { delete S.deleted[k]; n++; }
+  if (n) txVersion++;
+}
+const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); txVersion++; } catch (e) { toast('Enregistrement impossible : stockage plein ou bloqué. Exportez une sauvegarde.'); } };
+const save = () => { pruneDeleted(); persist(); schedSync(); };
 
 /* Réglages de synchronisation (jeton GitHub) : stockés à part, jamais exportés */
 const SYNC_KEY = 'mes-gourdes-sync', GIST_DESC = 'Mes Gourdes sync', GIST_FILE = 'mes-gourdes.json';
@@ -63,11 +107,14 @@ const saveSY = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(SY));
 function cleanTx(t) {
   if (!t || (t.type !== 'expense' && t.type !== 'saving')) return null;
   const amount = Math.floor(Number(t.amount));
-  if (!(amount > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(t.date || '')) return null;
-  return { id: String(t.id || '').replace(/[^\w-]/g, '').slice(0, 40) || uid(), type: t.type, amount, category: String(t.category || 'Autre').slice(0, 40), note: String(t.note || '').slice(0, 80), date: t.date, ...(Number(t.updated) > 0 ? { updated: Math.floor(Number(t.updated)) } : {}) };
+  const date = okDate(t.date);
+  if (!(amount > 0) || amount > 999999999 || !date) return null;
+  const u = Number(t.updated);
+  const updated = Number.isFinite(u) && u > 0 ? Math.min(Math.floor(u), Date.now()) : 0;
+  return { id: String(t.id || '').replace(/[^\w-]/g, '').slice(0, 40) || uid(), type: t.type, amount, category: String(t.category || 'Autre').slice(0, 40), note: String(t.note || '').slice(0, 80), date, ...(updated ? { updated } : {}) };
 }
 
-let AI = { key: '', model: DEFAULT_MODEL };
+let AI = { key: '', model: DEFAULT_MODEL, minimal: false };
 try { const r = JSON.parse(localStorage.getItem(AI_KEY) || 'null'); if (r) AI = Object.assign(AI, r); } catch (e) { }
 if (/^gemini-(1\.|2\.0)/.test(AI.model || '')) AI.model = DEFAULT_MODEL;
 const saveAI = () => { try { localStorage.setItem(AI_KEY, JSON.stringify(AI)); } catch (e) { } };
@@ -92,17 +139,43 @@ function lockUI(on) {
   if (on) { $('lockPin').value = ''; $('lockMsg').textContent = ''; setTimeout(() => $('lockPin').focus(), 50); }
 }
 let pinFails = 0, pinBlockedUntil = 0, hiddenAt = 0;
+/* Le compteur d'échecs survit à un rechargement : sinon un simple F5 contourne le verrouillage. */
+try {
+  pinFails = Number(sessionStorage.getItem('mes-gourdes-pinfails')) || 0;
+  pinBlockedUntil = Number(sessionStorage.getItem('mes-gourdes-pinblock')) || 0;
+} catch (e) { }
+function clearPinFails() {
+  pinFails = 0; pinBlockedUntil = 0;
+  try { sessionStorage.removeItem('mes-gourdes-pinfails'); sessionStorage.removeItem('mes-gourdes-pinblock'); } catch (e) { }
+}
 async function tryUnlock() {
   const wait = pinBlockedUntil - Date.now();
   if (wait > 0) { $('lockMsg').textContent = 'Trop d\'essais. Réessayez dans ' + Math.ceil(wait / 1000) + ' s.'; return; }
   const pin = $('lockPin').value; if (!pin || !LK) return;
-  if (await pinHash(pin, LK.salt) === LK.hash) { pinFails = 0; lockUI(false); return; }
+  if (await pinHash(pin, LK.salt) === LK.hash) { clearPinFails(); lockUI(false); return; }
   pinFails++; $('lockPin').value = '';
-  if (pinFails >= 5) { pinBlockedUntil = Date.now() + Math.min(300, 30 * (pinFails - 4)) * 1000; $('lockMsg').textContent = 'Code incorrect. Patientez avant de réessayer.'; }
+  try { sessionStorage.setItem('mes-gourdes-pinfails', String(pinFails)); } catch (e) { }
+  if (pinFails >= 5) {
+    pinBlockedUntil = Date.now() + Math.min(300, 30 * (pinFails - 4)) * 1000;
+    try { sessionStorage.setItem('mes-gourdes-pinblock', String(pinBlockedUntil)); } catch (e) { }
+    $('lockMsg').textContent = 'Code incorrect. Patientez avant de réessayer.';
+  }
   else $('lockMsg').textContent = 'Code incorrect (' + pinFails + ' sur 5).';
 }
 $('lockBtn').onclick = tryUnlock;
 $('lockPin').addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+/* Empêche Tab de sortir des dialogues (welcome / verrouillage). */
+function trapFocus(el) {
+  el.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const f = [...el.querySelectorAll('button:not([disabled]), input:not([disabled]), select, textarea, a[href]')].filter(x => x.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
+trapFocus($('lock')); trapFocus($('welcome'));
 function renderPrivacy() {
   $('pinOff').hidden = !!LK; $('pinOn').hidden = !LK;
   $('hideBtn').textContent = HIDE ? 'Afficher' : 'Masquer';
@@ -121,12 +194,14 @@ $('pinEnable').onclick = async () => {
   const salt = b64enc(crypto.getRandomValues(new Uint8Array(16)));
   LK = { salt, hash: await pinHash(a, salt) };
   try { localStorage.setItem(LOCK_KEY, JSON.stringify(LK)); } catch (e) { LK = null; toast('Enregistrement impossible'); return; }
+  clearPinFails();
   $('pinNew').value = ''; $('pinNew2').value = ''; renderPrivacy(); toast('Code PIN activé');
 };
 $('pinRemove').onclick = async () => {
   const p = $('pinCur').value;
   if (!p || await pinHash(p, LK.salt) !== LK.hash) { toast('Code actuel incorrect'); return; }
   LK = null; try { localStorage.removeItem(LOCK_KEY); } catch (e) { }
+  clearPinFails();
   $('pinCur').value = ''; renderPrivacy(); toast('Code PIN retiré');
 };
 $('lockNow').onclick = () => { if (LK) lockUI(true); };
@@ -140,12 +215,17 @@ if (LK) lockUI(true);
 
 /* ---------------- Navigation ---------------- */
 const TITLES = { home: 'Accueil', hist: 'Historique', ana: 'Analyse', ai: 'Assistant', more: 'Réglages' };
+/* Rendu paresseux : seul l'onglet visible est reconstruit, les autres sont marqués « à jour »
+   et ne le seront qu'à leur prochaine ouverture (voir flushTab()). */
+let activeTab = 'home';
+const dirty = { home: true, hist: true, ana: true };
 function go(tab) {
   $('pageTitle').textContent = TITLES[tab] || '';
-  if (tab === 'ana') { markBilanSeen(); markBilanAnSeen(); }
+  activeTab = tab;
   document.querySelectorAll('nav button').forEach(x => { const on = x.dataset.tab === tab; x.classList.toggle('on', on); on ? x.setAttribute('aria-current', 'page') : x.removeAttribute('aria-current'); });
   document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
   window.scrollTo(0, 0);
+  flushTab(tab);
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => go(b.dataset.tab));
 document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
@@ -370,10 +450,10 @@ if (PREFS.proj) { $('pMonthly').value = PREFS.proj.m || ''; $('pRate').value = P
   PREFS.proj = { m: $('pMonthly').value, rate: $('pRate').value }; savePrefs(); renderProj();
 }));
 
-function render() {
-  const m = $('month').value;
-  const inMonth = S.tx.filter(t => t.date.startsWith(m));
-  const totSav = sumBy(S.tx, 'saving'), totExp = sumBy(S.tx, 'expense');
+function renderHome() {
+  const m = $('month').value, idx = getIndex();
+  const inMonth = idx.byMonth[m] || [];
+  const totSav = idx.totals.saving, totExp = idx.totals.expense;
   $('sMonthSav').textContent = fmt(sumBy(inMonth, 'saving'));
   $('sMonthExp').textContent = fmt(sumBy(inMonth, 'expense'));
   $('sTotSav').textContent = fmt(totSav);
@@ -389,7 +469,7 @@ function render() {
     $('goalTxt').textContent = `${fmt(totSav)} / ${fmt(S.goal)} (${Math.floor(p)} %)`;
     $('goalPace').textContent = goalPace(totSav);
   }
-  const curExp = sumBy(S.tx.filter(t => t.date.startsWith(today().slice(0, 7))), 'expense');
+  const curExp = sumBy(idx.byMonth[today().slice(0, 7)] || [], 'expense');
   $('capBox').hidden = !(S.cap > 0);
   if (S.cap > 0) {
     const p = curExp / S.cap * 100;
@@ -408,10 +488,21 @@ function render() {
   }).join('') : '<div class="empty">Aucune dépense ce mois-ci</div>';
 
   renderWeek();
-  renderProj();
-  renderHist();
-  renderAna();
+}
+
+/* Toutes les mutations appellent render() : on invalide les 3 vues mais on ne reconstruit
+   que l'onglet affiché. Les autres le seront à la demande, via go() -> flushTab(). */
+function render() {
+  dirty.home = dirty.hist = dirty.ana = true;
   renderAiState();
+  flushTab(activeTab);
+}
+function flushTab(tab) {
+  if (!dirty[tab]) return;
+  if (tab === 'home') renderHome();
+  else if (tab === 'hist') renderHist();
+  else if (tab === 'ana') { renderAna(); renderProj(); }
+  dirty[tab] = false;
 }
 $('month').onchange = () => { render(); };
 
@@ -451,7 +542,9 @@ function renderHist() {
       <button data-del="${esc(t.id)}" aria-label="Supprimer">Supprimer</button></div>`;
   }).join('') : '<div class="empty">Aucune ligne ne correspond</div>';
 }
-['fPeriod', 'fType', 'fCat', 'fMin', 'fText'].forEach(id => $(id).addEventListener('input', renderHist));
+['fPeriod', 'fType', 'fCat', 'fMin'].forEach(id => $(id).addEventListener('input', renderHist));
+let searchTimer;
+$('fText').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderHist, 120); });
 $('fReset').onclick = () => { $('fPeriod').value = 'month'; $('fType').value = 'all'; $('fCat').value = 'all'; $('fMin').value = ''; $('fText').value = ''; renderHist(); };
 $('list').onclick = e => {
   const ed = e.target.dataset && e.target.dataset.edit; if (ed) { startEdit(ed); return; }
@@ -478,18 +571,22 @@ function monthStats(m) {
   const l = S.tx.filter(t => t.date.startsWith(m));
   return { exp: sumBy(l, 'expense'), sav: sumBy(l, 'saving'), list: l };
 }
-function trendSvg(data) {
-  const W = 320, H = 140, bw = 13, gap = (W - 16) / data.length;
+/* Générateur de graphique en barres partagé (tendance 6 mois + bilan annuel). */
+function barsSvg(data, o = {}) {
+  const W = o.W || 320, H = o.H || 140, bw = o.bw || 13, every = o.every || 1;
+  const gap = (W - 16) / data.length;
   const max = Math.max(1, ...data.flatMap(d => [d.sav, d.exp]));
-  let s = `<svg viewBox="0 0 ${W} ${H + 22}" width="100%" role="img" aria-label="Économies et dépenses sur 6 mois">`;
+  let s = `<svg viewBox="0 0 ${W} ${H + 22}" width="100%" role="img" aria-label="${esc(o.aria || '')}">`;
   data.forEach((d, i) => {
     const x = 8 + i * gap + gap / 2, hs = d.sav / max * H, he = d.exp / max * H;
-    s += `<rect x="${x - bw - 1}" y="${H - hs}" width="${bw}" height="${hs}" rx="1" fill="var(--c-sav)"><title>${d.label} · économies ${fmt(d.sav)}</title></rect>`;
-    s += `<rect x="${x + 1}" y="${H - he}" width="${bw}" height="${he}" rx="1" fill="var(--c-exp)"><title>${d.label} · dépenses ${fmt(d.exp)}</title></rect>`;
-    s += `<text x="${x}" y="${H + 15}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${esc(d.label)}</text>`;
+    s += `<rect x="${(x - bw - 1).toFixed(1)}" y="${(H - hs).toFixed(1)}" width="${bw}" height="${hs.toFixed(1)}" rx="1" fill="var(--c-sav)"><title>${esc(d.label)} · économies ${fmt(d.sav)}</title></rect>`;
+    s += `<rect x="${(x + 1).toFixed(1)}" y="${(H - he).toFixed(1)}" width="${bw}" height="${he.toFixed(1)}" rx="1" fill="var(--c-exp)"><title>${esc(d.label)} · dépenses ${fmt(d.exp)}</title></rect>`;
+    if (i % every === 0 || i === data.length - 1)
+      s += `<text x="${x.toFixed(1)}" y="${H + 15}" text-anchor="middle" font-size="10" fill="var(--ink-3)">${esc(d.label)}</text>`;
   });
   return s + `<line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/></svg>`;
 }
+function trendSvg(data) { return barsSvg(data, { aria: 'Économies et dépenses sur 6 mois' }); }
 function renderAna() {
   const m = $('month').value, isCur = m === today().slice(0, 7);
   $('anaMonth').textContent = '· ' + monthLong(m);
@@ -538,9 +635,9 @@ const curQ = () => qOf(today().slice(0, 7));
 const qCount = k => S.tx.filter(t => qMonths(k).includes(t.date.slice(0, 7))).length;
 
 function availableQuarters() {
-  const cur = curQ(), out = [cur];
-  if (!S.tx.length) return out;
-  const first = qOf(S.tx.reduce((a, t) => t.date < a ? t.date : a, '9999-99-99').slice(0, 7));
+  const cur = curQ(), out = [cur], idx = getIndex();
+  if (!idx.count) return out;
+  const first = qOf(idx.minDate.slice(0, 7));
   for (let k = qPrev(cur); k >= first && out.length < 8; k = qPrev(k)) out.push(k);
   return out;
 }
@@ -631,9 +728,9 @@ $('bilanAi').onclick = () => {
 
 /* ---------------- Bilan annuel ---------------- */
 function availableYears() {
-  const cur = today().slice(0, 4), out = [cur];
-  if (!S.tx.length) return out;
-  const first = S.tx.reduce((a, t) => t.date < a ? t.date : a, '9999-99-99').slice(0, 4);
+  const cur = today().slice(0, 4), out = [cur], idx = getIndex();
+  if (!idx.count) return out;
+  const first = idx.minDate.slice(0, 4);
   for (let y = Number(cur) - 1; y >= Number(first) && out.length < 8; y--) out.push(String(y));
   return out;
 }
@@ -698,18 +795,8 @@ function renderBilanAn() {
   const pts = anPoints(d);
   const reliability = d.daysWith / d.totalDays < 0.3 ? `<div class="alert info"><span>Opérations notées ${d.daysWith} jour(s) sur ${d.totalDays} : le bilan est probablement incomplet.</span></div>` : '';
   const cats = Object.entries(d.cats).sort((a, b) => b[1] - a[1]);
-  // Graphique mensuel simplifié (barres économies/dépenses)
-  const active = d.monthly.filter(x => x.exp > 0 || x.sav > 0);
-  const maxV = Math.max(1, ...d.monthly.flatMap(x => [x.exp, x.sav]));
-  const W = 320, H = 100, bw = 8, gap = (W - 16) / 12;
-  let svgBars = `<svg viewBox="0 0 ${W} ${H + 18}" width="100%" role="img" aria-label="Dépenses et économies mensuelles ${y}">`;
-  d.monthly.forEach((x, i) => {
-    const cx = 8 + i * gap + gap / 2, hs = x.sav / maxV * H, he = x.exp / maxV * H;
-    svgBars += `<rect x="${cx - bw - 1}" y="${H - hs}" width="${bw}" height="${hs}" rx="1" fill="var(--c-sav)"><title>${x.m} économies ${fmt(x.sav)}</title></rect>`;
-    svgBars += `<rect x="${cx + 1}" y="${H - he}" width="${bw}" height="${he}" rx="1" fill="var(--c-exp)"><title>${x.m} dépenses ${fmt(x.exp)}</title></rect>`;
-    if (i % 2 === 0 || i === 11) svgBars += `<text x="${cx}" y="${H + 13}" text-anchor="middle" font-size="9" fill="var(--ink-3)">${monthShort(x.m)}</text>`;
-  });
-  svgBars += `<line x1="0" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/></svg>`;
+  const svgBars = barsSvg(d.monthly.map(x => ({ label: monthShort(x.m), sav: x.sav, exp: x.exp })),
+    { H: 100, bw: 8, every: 2, aria: `Dépenses et économies mensuelles ${y}` });
   $('bilanAnBody').innerHTML = `
     ${d.isCur ? '<div class="alert info"><span>Année en cours : les chiffres sont partiels.</span></div>' : ''}
     ${reliability}
@@ -780,11 +867,11 @@ $('budgetSave').onclick = () => {
 
 /* ---------------- IA ---------------- */
 const hasKey = () => !!(AI.key && AI.key.trim());
+let aiBusy = false;   // déclaré avant renderAiState() pour éviter toute zone morte temporaire
 function renderAiState() {
   $('aiNoKey').hidden = hasKey();
   ['aiAddBtn', 'aiSend'].forEach(id => $(id).disabled = !hasKey() || aiBusy);
 }
-let aiBusy = false;
 
 async function callAI(system, messages, max = 1000) {
   if (!hasKey()) throw new Error('Ajoutez votre clé API dans Réglages.');
@@ -836,9 +923,11 @@ function buildContext() {
   for (let i = -5; i <= 0; i++) { const k = shiftMonth(m, i), s = monthStats(k); lines.push(`- ${k} : ${s.sav} / ${s.exp}`); }
   const by = {}; S.tx.filter(t => t.type === 'expense' && t.date.startsWith(m)).forEach(t => by[t.category] = (by[t.category] || 0) + t.amount);
   lines.push('Dépenses du mois en cours par catégorie : ' + (Object.entries(by).map(([c, v]) => `${c}=${v}`).join(', ') || 'aucune') + '.');
-  const last = S.tx.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 80);
-  lines.push('Dernières opérations (date | type | catégorie | montant | note) :');
-  last.forEach(t => lines.push(`${t.date} | ${t.type === 'expense' ? 'dépense' : 'économie'} | ${t.category} | ${t.amount} | ${t.note || ''}`));
+  const lim = !!AI.minimal;
+  const last = S.tx.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, lim ? 10 : 80);
+  lines.push(`Dernières opérations (date | type | catégorie | montant${lim ? '' : ' | note'}) :`);
+  last.forEach(t => lines.push(`${t.date} | ${t.type === 'expense' ? 'dépense' : 'économie'} | ${t.category} | ${t.amount}${lim ? '' : ' | ' + (t.note || '')}`));
+  if (lim) lines.push('Mode confidentiel actif : notes et historique limités, ne pas deviner les détails manquants.');
   return lines.join('\n');
 }
 const SYSTEM_COACH = ctx => `Tu es un conseiller financier personnel bienveillant et concret, intégré à une petite application de suivi en gourdes haïtiennes (G).
@@ -936,6 +1025,8 @@ Catégories d'économie autorisées : ${CATS.saving.join(', ')}.
 
 /* Réglages IA */
 $('aiKey').value = AI.key || ''; $('aiModel').value = AI.model || DEFAULT_MODEL;
+$('aiMinimal').checked = !!AI.minimal;
+$('aiMinimal').onchange = () => { AI.minimal = $('aiMinimal').checked; saveAI(); toast(AI.minimal ? 'Données envoyées limitées' : 'Contexte complet rétabli'); };
 $('aiSave').onclick = async () => {
   AI.key = $('aiKey').value.trim(); AI.model = $('aiModel').value.trim() || DEFAULT_MODEL; saveAI(); renderAiState();
   if (!AI.key) { toast('Clé retirée'); return; }
@@ -994,7 +1085,7 @@ $('importFile').onchange = e => {
       const d = JSON.parse(r.result); if (!d || !Array.isArray(d.tx)) throw 0;
       if (!confirm('Remplacer vos données actuelles par cette sauvegarde ?')) return;
       const cleanBud = {}; Object.entries(d.budgets || {}).forEach(([c, v]) => { if (Number(v) > 0) cleanBud[c] = Math.floor(Number(v)); });
-      const tx = d.tx.map(cleanTx).filter(Boolean);
+      const cleaned = d.tx.map(cleanTx), tx = cleaned.filter(Boolean);
       const keep = new Set(tx.map(t => t.id)), deleted = Object.assign({}, S.deleted), now = Date.now();
       S.tx.forEach(t => { if (!keep.has(t.id)) deleted[t.id] = now; });   // les lignes retirées le sont aussi sur les autres appareils
       keep.forEach(id => delete deleted[id]);
@@ -1002,7 +1093,9 @@ $('importFile').onchange = e => {
         tx, goal: Number(d.goal) || 0, goalDate: okDate(d.goalDate), cap: Number(d.cap) || 0, budgets: cleanBud, seen: {}, notif: S.notif,
         deleted, settingsAt: now
       };
-      save(); loadBudgetForm(); render(); checkAlerts(false); toast('Sauvegarde importée');
+      const skipped = cleaned.length - tx.length;
+      save(); loadBudgetForm(); render(); checkAlerts(false);
+      toast(skipped ? `Sauvegarde importée (${skipped} ligne${skipped > 1 ? 's' : ''} invalide${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''})` : 'Sauvegarde importée');
     } catch (err) { toast('Fichier invalide'); }
   };
   r.readAsText(f); e.target.value = '';
@@ -1051,12 +1144,16 @@ function merge(a, b) {
    GitHub ne reçoit que des données illisibles sans la phrase, qui ne quitte jamais l'appareil. */
 const b64enc = u => { const a = new Uint8Array(u); let s = ''; for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s); };
 const b64dec = t => Uint8Array.from(atob(t), c => c.charCodeAt(0));
-const keyCache = {};
+/* Une seule clé dérivée en cache : la phrase ne sert plus de clé d'objet, et le cache
+   est invalidé dès que la phrase change ou que la synchronisation est désactivée. */
+let keyCache = null;
 async function deriveKey(pass, salt) {
-  const id = pass + '|' + b64enc(salt);
-  if (keyCache[id]) return keyCache[id];
+  const sb = b64enc(salt);
+  if (keyCache && keyCache.pass === pass && keyCache.salt === sb) return keyCache.key;
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
-  return keyCache[id] = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  keyCache = { pass, salt: sb, key };
+  return key;
 }
 async function encryptPayload(obj, pass, salt) {
   const iv = crypto.getRandomValues(new Uint8Array(12)), key = await deriveKey(pass, salt);
@@ -1152,18 +1249,25 @@ $('syncEnable').onclick = async () => {
   const ok = await sync();
   $('syncEnable').disabled = false; $('syncEnable').textContent = 'Activer la synchronisation';
   if (ok) { $('syncToken').value = ''; $('syncPass').value = ''; toast('Synchronisation activée'); }
-  else if (lastAuthError) { const m = syncMsg; SY = { token: '', gist: '', last: 0 }; saveSY(); syncMsg = m; renderSync(); toast('Jeton refusé'); }
+  else if (lastAuthError) { const m = syncMsg; SY = { token: '', pass: '', gist: '', last: 0 }; keyCache = null; saveSY(); syncMsg = m; renderSync(); toast('Jeton refusé'); }
 };
 $('syncNow').onclick = () => sync();
 $('syncDisable').onclick = () => {
   if (!confirm('Désactiver la synchronisation sur cet appareil ? Vos données restent ici et dans votre gist GitHub.')) return;
-  SY = { token: '', gist: '', last: 0 }; saveSY(); lastHash = ''; syncMsg = ''; renderSync(); toast('Synchronisation désactivée');
+  SY = { token: '', pass: '', gist: '', last: 0 }; saveSY(); lastHash = ''; syncMsg = ''; keyCache = null; renderSync(); toast('Synchronisation désactivée');
 };
 
 /* ---------------- Analyse : Mois / Trimestre / Année ---------------- */
 document.querySelectorAll('#anaNav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#anaNav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('#anaNav button').forEach(x => {
+    const on = x === b;
+    x.classList.toggle('on', on);
+    x.setAttribute('aria-selected', String(on));
+  });
   document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === 'ana-' + b.dataset.ana));
+  /* Le bilan n'est considéré comme lu que lorsque son sous-onglet est réellement ouvert. */
+  if (b.dataset.ana === 'quarter') markBilanSeen();
+  if (b.dataset.ana === 'year') markBilanAnSeen();
 });
 
 /* ---------------- Citations ---------------- */
